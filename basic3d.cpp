@@ -132,20 +132,20 @@ void Basic3D::inputObject() {
                if (finalvertex)
                   len--;
                j = stri.left(len).toInt(&ok);
-               int nr = abs(j);
-               if (nr >= world.size() || world[nr].x > 1e29) {
-                  QMessageBox msgBox;
-                  msgBox.setText("Undefined vertex: " +
-                     QString::number(nr));
-                  msgBox.exec();
-                  errorfound = true;
-                  break;
-               }
                if (ok) {
+                  int nr = abs(j);
+                  if (nr >= world.size() || world[nr].x > 1e29) {
+                     QMessageBox msgBox;
+                     msgBox.setText("Undefined vertex: " +
+                        QString::number(nr));
+                     msgBox.exec();
+                     errorfound = true;
+                     break;
+                  }
                   int size = polygon.nrs.size();
                   if (size == 0 ||
-                     (different(nr, polygon.nrs[size - 1]) &&
-                     (!finalvertex || different(nr, polygon.nrs[0]))))
+                     (different(nr, abs(polygon.nrs[size - 1])) &&
+                     (!finalvertex || different(nr, abs(polygon.nrs[0])))))
                      polygon.nrs.push_back(j);
                   if (!finalvertex)
                      continue;

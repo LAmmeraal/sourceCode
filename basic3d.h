@@ -34,14 +34,14 @@ typedef set<IntPair, less<IntPair> >EdgeSet;
 class Basic3D : public QMainWindow {
    Q_OBJECT
 protected:
-   Basic3D(QWidget *parent = nullptr);
+   Basic3D(QWidget *parent = 0);
    qreal xsMin, xsMax, ysMin, ysMax, xsRange = 0, ysRange,
       theta0Deg = 30, theta0 = theta0Deg * M_PI / 180,
       thetaDeg = theta0Deg, theta = theta0,  // Horizontal
       phi0Deg = 70, phi0 = phi0Deg * M_PI / 180,
       phiDeg = phi0Deg, phi = phi0,        // Vertical
       xwMin, xwMax, ywMin, ywMax, zwMin, zwMax,
-      xC, yC, zC, rho, rho0, rhoMin, d;
+      xC, yC, zC, rho, rho0, rhoMin, rhoMax, d;
    const int hMenu = 21;
    int wDraw, hDraw,  // Drawing in wDraw x hDraw pixels
       xDevCenter, yDevCenter;
@@ -67,11 +67,13 @@ protected:
    void mouseReleaseEvent(QMouseEvent *e) override;
    void resizeEvent(QResizeEvent *e) override;
 public:
+   void simpleMessage(const QString &title, const QString &mes);
    vector<Point3D> world, eye;
    vector<Point2D> scr;
    EdgeSet edges;
    vector <Polygon3D> polyList;
    bool defaultPaint = true; // Can be overwritten in derived class
+   qreal zNear, zFar, eps1;  // Used in HLines
 public slots:
    void open();
    void incrDist();

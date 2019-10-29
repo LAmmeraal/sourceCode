@@ -1,6 +1,6 @@
 // triangulate.cpp: Triangulation of polygons.
 #include "triangulate.h"
-using namespace std; 
+using namespace std;
 
 bool Triangulate::triangulate(const vector<Point2D> &scr,
    vector<int> pol, vector<Tria> &trias) {
@@ -14,7 +14,7 @@ bool Triangulate::triangulate(const vector<Point2D> &scr,
       for (int iA = 0; !triaFound; iA = (iA + 1) % pol.size()) {
          if (count-- < 0)
             return false; // Not a simple polygon
-         int iB = (iA + 1) % pol.size(), 
+         int iB = (iA + 1) % pol.size(),
             iC = (iA + 2) % pol.size();
          int A = abs(pol[iA]), B = abs(pol[iB]), C = abs(pol[iC]);
          if (orientation(scr, A, B, C) >= 0) {
@@ -87,11 +87,12 @@ bool Triangulate::insideTriangle(const vector<Point2D> &scr,
 
 int Triangulate::orientation(const vector<Point2D> &scr,
    int Pnr, int Qnr, int Rnr) {
-   qreal u1 = scr[Qnr].x - scr[Pnr].x, 
+   qreal u1 = scr[Qnr].x - scr[Pnr].x,
       u2 = scr[Qnr].y - scr[Pnr].y,
       v1 = scr[Rnr].x - scr[Pnr].x, v2 = scr[Rnr].y - scr[Pnr].y;
    qreal det = u1 * v2 - u2 * v1;
    return det > 0 ? 1 : det < 0 ? -1 : 0;
+
 }
 
 qreal Triangulate::angle(const vector<Point2D> &scr,
@@ -114,13 +115,18 @@ qreal Triangulate::angle(const vector<Point2D> &scr,
 
 bool Triangulate::isCounterclockwise(const vector<Point2D> &scr,
    const vector<int> &nrs) {
-   qreal s = 0;
-   int n = nrs.size();
-   for (int i = 0; i < n; i++) {
-      int j = (i + 1) % n, k = (i + 2) % n;
-      int ii = abs(nrs[i]), jj = abs(nrs[j]), kk = abs(nrs[k]);
-      s += (M_PI -
-         angle(scr, ii, jj, kk)) * orientation(scr, ii, jj, kk);
-   }
-   return s > 0;
+   qreal xRight = -1e30, x;
+   int n = nrs.size(), j1 = 0, i = -1;
+   do {
+      int j = (++i) % n;
+      int k = abs(nrs[j]);
+      x = scr[k].x;
+      if (x >= xRight) {
+         xRight = x;
+         j1 = j;
+      }
+   } while (i < n || x == xRight);
+   int k = abs(nrs[j1]), kPrev = abs(nrs[(j1 + n - 1) % n]),
+      kNext = abs(nrs[(j1 + 1) % n]);
+   return orientation(scr, kPrev, k, kNext) == 1;
 }

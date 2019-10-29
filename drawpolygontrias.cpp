@@ -12,7 +12,7 @@ void DrawPolygonTrias::mousePressEvent(QMouseEvent *event) {
             pol[i] = v.size() - 1 - i;
       if (!Triangulate::triangulate(v, pol, trias)) {
          QMessageBox msgBox(this);
-         msgBox.setText("This is not a simple polygon."); 
+         msgBox.setText("This is not a simple polygon.");
          msgBox.exec();
       }
       cnt++; // For variation in colors; see paint event

@@ -69,7 +69,7 @@ Edit3D::Edit3D(QWidget *parent) {
    connect(delSelectedVerticesAct, &QAction::triggered, this,
       &Edit3D::delSelectedVertices);
 
-   noVertexDataShownAct = new QAction("Show no vertex data");
+   noVertexDataShownAct = new QAction("Show no vertex data", this);
    noVertexDataShownAct->setCheckable(true);
    noVertexDataShownAct->setChecked(true);
    showNrsActExt = new QAction("Show &vertex numbers",
@@ -147,19 +147,16 @@ void Edit3D::selectVertices() {
       world.size() - 1, first, world.size() - 1, 1, &ok);
    if (!ok)
       return;
-   QMessageBox msgBox;
-   msgBox.setWindowTitle("Selected");
-   msgBox.setText("Range of selected vertices: " +
+   simpleMessage("Selected", "Range of selected vertices: " +
       QString::number(first) + " - " +
       QString::number(last));
-   msgBox.exec();
    for (int i = first; i <= last; i++) {
-      selection.insert(i);
+      if (world[i].x < 1e29)
+         selection.insert(i);
    }
 }
 
 void Edit3D::duplicateVertices() {
-   QMessageBox msgBox;
    map<int, int> dupl;
 
    if (selection.empty())
@@ -198,18 +195,17 @@ void Edit3D::duplicateVertices() {
       selection.insert(i);
    boundsCenterDistance();
    computePerspCoord();
-   msgBox.setWindowTitle("Duplicated points, now selected");
-   msgBox.setText("New range of selected vertex numbers " +
+   simpleMessage("Duplicated points, now selected",
+      "New range of selected vertex numbers " +
       QString::number(firstnew) + " - " +
       QString::number(lastnew) +
       "\nYou can now shift the new points by supplying\n" +
       "the shift vector (delta x, delta y, delta z).\n" +
       "Use 0 0 0 if you don\'t want to shift them now.");
-   msgBox.exec();
    shiftVertices();
    drawImage0();
 }
-
+/*
 void Edit3D::shiftVertices() {
    bool ok;
    QString text = QInputDialog::getText(this,
@@ -221,6 +217,50 @@ void Edit3D::shiftVertices() {
    istringstream ii(str);
    qreal dx, dy, dz;
    ii >> dx >> dy >> dz;
+   if (ii.fail())
+      return;
+   for (set<int>::iterator i = selection.begin();
+      i != selection.end(); i++) {
+      int j = *i;
+      world[j] = Point3D(world[j].x + dx,
+         world[j].y + dy, world[j].z + dz);
+   }
+   boundsCenterDistance();
+   computePerspCoord();
+   drawImage0();
+}
+*/
+bool Edit3D::validVertexNr(int i) const {
+   return i >= 0 && i < world.size() && world[i].x < 1e29;
+}
+
+void Edit3D::shiftVertices() {
+   bool ok;
+   QString text = QInputDialog::getText(this,
+      "Shift vector",
+      "Enter delta x, delta y, delta z, for example, 5 0 0     \n\
+or shift vector (P, Q), where P and Q are vertex numbers.",
+      QLineEdit::Normal, "0  0  0",
+      &ok);
+   std::string str = text.toStdString();
+   istringstream ii(str);
+   qreal dx, dy, dz;
+   if (ii.peek() == '(') {
+      int iP, iQ, n = world.size();
+      char ch, ch1;
+      ii >> ch >> iP >> ch >> iQ >> ch1;
+      if (ch != ',' || ch1 != ')' || !validVertexNr(iP) ||
+         !validVertexNr(iQ)) {
+         simpleMessage("Syntax error", "Use format (P, Q)");
+            return;
+      }
+      Point3D P = world[iP], Q = world[iQ];
+      dx = Q.x - P.x;
+      dy = Q.y - P.y;
+      dz = Q.z - P.z;
+   }
+   else
+      ii >> dx >> dy >> dz;
    if (ii.fail())
       return;
    for (set<int>::iterator i = selection.begin();
@@ -301,13 +341,10 @@ void Edit3D::addVertex() {
    boundsCenterDistance();
    computePerspCoord();
    selection.insert(nr);
-   QMessageBox msgBox;
-   msgBox.setWindowTitle("New point");
-   msgBox.setText("Vertex " + QString::number(nr) +
+   simpleMessage("New point", "Vertex " + QString::number(nr) +
       ": (" + QString::number(x) + ", " +
       QString::number(y) + ", " +
       QString::number(z) + ")");
-   msgBox.exec();
    boundsCenterDistance();
    computePerspCoord();
    drawImage0();
@@ -332,10 +369,7 @@ void Edit3D::addFace() {
       if (ii.fail())
          break;
       if (abs(nr) >= world.size() || world[abs(nr)].x > 1e29) {
-         QMessageBox msgBox;
-         msgBox.setWindowTitle("Error");
-         msgBox.setText(QString::number(nr) + " undefined.");
-         msgBox.exec();
+         simpleMessage("Error", QString::number(nr) + " undefined.");
          break;
       }
       polygon.nrs.push_back(nr);
@@ -500,36 +534,43 @@ void Edit3D::drawImage0() {
 void Edit3D::paintEvent(QPaintEvent *e) {
    if (thread.isRunning())
       return;
-   HLines::paintEvent(e);
+   bool showNrsSave = showNrs;
+   showNrs = false;       // We will show numbers only
+   HLines::paintEvent(e); // for selected vertices,
+   showNrs = showNrsSave; // for better readability.
 
    QPainter pnt(this);
    for (int i = 0; i < scr.size(); i++) {
-      if (world[i].x > 1e29)
-         continue;
-      qreal x = scr[i].x, y = scr[i].y;
-      int x1 = xDev(x), y1 = yDev(y);
-
-      if (showCoords != 0) {
-         qreal coord = (showCoords == 1 ? world[i].x :
-            showCoords == 2 ? world[i].y :
-            world[i].z);
-         pnt.drawText(x1, y1, QString::number(coord));
-      }
       set<int>::iterator it = selection.find(i);
       if (it != selection.end()) { // mark selected vertex:
          pnt.setPen(QPen(Qt::red, 3));
          pnt.setBrush(Qt::red);
+         qreal x = scr[i].x, y = scr[i].y;
+         int x1 = xDev(x), y1 = yDev(y);
          pnt.drawEllipse(x1 - 1, y1 - 1, 3, 3);
          pnt.setPen(QPen(Qt::black, 2));
          pnt.setBrush(Qt::black);
+         if (showNrs) {
+            pnt.drawText(x1, y1, QString::number(i));
+         }
+         if (showCoords != 0) {
+            qreal coord = (showCoords == 1 ? world[i].x :
+               showCoords == 2 ? world[i].y :
+               world[i].z);
+            pnt.drawText(x1, y1, QString::number(coord));
+         }
       }
    }
-   if (showNrs)
-      pnt.drawText(10, 50, "Vertex numbers shown");
-   if (showCoords) {
-      QString s = (showCoords == 1 ? "x" : showCoords == 2 ?
-         "y" : "z");
-      pnt.drawText(10, 50, s + "-coordinates shown");
+
+   if (showNrs || showCoords) {
+      pnt.drawText(10, 50, "Selected points show");
+      if (showNrs)
+         pnt.drawText(10, 70, "Vertex numbers.");
+      else {
+         QString s = (showCoords == 1 ? "x" : showCoords == 2 ?
+            "y" : "z");
+         pnt.drawText(10, 70, s + "-coordinates.");
+      }
    }
 }
 

@@ -47,6 +47,14 @@ Basic3D::Basic3D(QWidget *parent) {
    menuBar()->addMenu(viewMenu);
 }
 
+void Basic3D::simpleMessage(const QString &title,
+   const QString &mes) {
+   QMessageBox msgBox;
+   msgBox.setWindowTitle(title);
+   msgBox.setText(mes);
+   msgBox.exec();
+}
+
 void Basic3D::boundsCenterDistance() {
    xwMin = 1e6, xwMax = -xwMin,
       ywMin = xwMin, ywMax = xwMax,
@@ -58,16 +66,17 @@ void Basic3D::boundsCenterDistance() {
       xwMin = min(x, xwMin); xwMax = max(x, xwMax);
       ywMin = min(y, ywMin); ywMax = max(y, ywMax);
       zwMin = min(z, zwMin); zwMax = max(z, zwMax);
-      xC = (xwMin + xwMax) / 2;
-      yC = (ywMin + ywMax) / 2;
-      zC = (zwMin + zwMax) / 2;
-      qreal xwRange = xwMax - xwMin + 0.001,
-         ywRange = ywMax - ywMin + 0.001,
-         zwRange = zwMax - zwMin + 0.001;
-      rhoMin = sqrt(xwRange * xwRange +
-         ywRange * ywRange + zwRange * zwRange);
-      rho0 = rho = 3 * rhoMin;
    }
+   xC = (xwMin + xwMax) / 2;
+   yC = (ywMin + ywMax) / 2;
+   zC = (zwMin + zwMax) / 2;
+   qreal xwRange = xwMax - xwMin + 0.001,
+      ywRange = ywMax - ywMin + 0.001,
+      zwRange = zwMax - zwMin + 0.001;
+   rhoMin = sqrt(xwRange * xwRange +
+      ywRange * ywRange + zwRange * zwRange);
+   rhoMax = 40 * rhoMin;
+   rho0 = rho = 3 * rhoMin;
 }
 
 bool Basic3D::different(int i, int j) const {
@@ -135,17 +144,16 @@ void Basic3D::inputObject() {
                if (ok) {
                   int nr = abs(j);
                   if (nr >= world.size() || world[nr].x > 1e29) {
-                     QMessageBox msgBox;
-                     msgBox.setText("Undefined vertex: " +
-                        QString::number(nr));
-                     msgBox.exec();
+                     simpleMessage("Error",
+                        "Undefined vertex: " + QString::number(nr));
                      errorfound = true;
                      break;
                   }
                   int size = polygon.nrs.size();
                   if (size == 0 ||
                      (different(nr, abs(polygon.nrs[size - 1])) &&
-                     (!finalvertex || different(nr, abs(polygon.nrs[0])))))
+                     (!finalvertex ||
+                        different(nr, abs(polygon.nrs[0])))))
                      polygon.nrs.push_back(j);
                   if (!finalvertex)
                      continue;
@@ -180,7 +188,7 @@ void Basic3D::newObjectTest() {
 }
 
 void Basic3D::incrDist() {
-   rho *= 1.5;
+   rho = min(rhoMax, rho * 1.5);
    computePerspCoord();
    if (defaultPaint)
       repaint();
@@ -211,12 +219,22 @@ void Basic3D::angleChange() {
       phiDeg1 = QInputDialog::getDouble(this, "phi (deg)",
          "Angle in vert. plane", phiDeg, 0, 180, 1, &ok);
    if (ok)
-      rho1 = QInputDialog::getDouble(this, "rho", "Viewing distance",
-         rho, rhoMin, 1e9, 1, &ok);
+      rho1 = QInputDialog::getDouble(this, "rho",
+         "Viewing distance", rho, 1, 1e9, 1, &ok);
    if (ok) {
       thetaDeg = thetaDeg1;
       phiDeg = phiDeg1;
       rho = rho1;
+      if (rho < rhoMin) {
+         rho = rhoMin;
+      }
+      if (rho > rhoMax) {
+         rho = rhoMax;
+      }
+      if (rho != rho1)
+         simpleMessage("Adapted to range",
+            "Viewing distance set to " +
+            QString::number(rho, 'f', 1));
       theta = thetaDeg * M_PI / 180;
       phi = phiDeg * M_PI / 180;
       computePerspCoord();
@@ -243,6 +261,8 @@ void Basic3D::computePerspCoord() {
       v43 = -rho;
    eye.resize(n);
    scr.resize(n);
+   zNear = -1e20;
+   zFar = 1e20;
    for (int i = 0; i < n; i++) {
       if (world[i].x > 1e29)
          continue;  // unused position
@@ -252,6 +272,8 @@ void Basic3D::computePerspCoord() {
       pe.x = v11 * x + v21 * y;
       pe.y = v12 * x + v22 * y + v32 * z;
       pe.z = v13 * x + v23 * y + v33 * z + v43;
+      zNear = max(zNear, pe.z);
+      zFar = min(zFar, pe.z);
       eye[i] = pe;
       // Screen coordinates:
       qreal X = -pe.x / pe.z, Y = -pe.y / pe.z;
@@ -259,9 +281,10 @@ void Basic3D::computePerspCoord() {
       xsMax = max(X, xsMax); ysMax = max(Y, ysMax);
       scr[i] = Point2D(X, Y);
    }
+   eps1 = 0.001 * (zNear - zFar);
    if (n == 0)
       return;
-   xsRange = xsMax - xsMin + 1e-9; // Preventing 
+   xsRange = xsMax - xsMin + 1e-9; // + 1e-9 prevents
    ysRange = ysMax - ysMin + 1e-9; // division by zero.
    d = 0.85 * min(wDraw / xsRange, hDraw / ysRange);
    xsCenter = 0.5 * (xsMin + xsMax);

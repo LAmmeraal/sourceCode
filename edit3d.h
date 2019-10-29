@@ -6,7 +6,7 @@
 class Edit3D : public HLines {
    Q_OBJECT
 public:
-   Edit3D(QWidget *parent = nullptr);
+   Edit3D(QWidget *parent = 0);
    void drawImage0();
 protected:
    void paintEvent(QPaintEvent *e);
@@ -42,5 +42,6 @@ protected slots:
    void showYOn();
    void showZOn();
    void showNrsOn();
+   bool validVertexNr(int i) const;
 };
 #endif // EDIT3D_H

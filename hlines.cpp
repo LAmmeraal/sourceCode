@@ -35,7 +35,7 @@ HLines::HLines(QWidget *parent) {
    showNrsAct->setChecked(false);
    connect(showNrsAct, &QAction::triggered, this,
       &HLines::showNrsToggle);
-   setPenWidthAct = new QAction("Set pen width...");
+   setPenWidthAct = new QAction("Set pen width...", this);
    connect(setPenWidthAct, &QAction::triggered, this,
       &HLines::setPenWidth);
    fileMenu->addAction(openAct);
@@ -111,8 +111,11 @@ void HLines::calculate() {  // called in thread
       if (!dashed && clockwise) // Unless dashed lines are
          continue;     // desired, we are done with this polygon
       // For each polygon edge to be drawn, put the vertex
-      // number pair of its endpoints in the set 'edges':
+      // number pair of its endpoints in the set 'edges'.
+      // We also compute a, b, c and h of the equation
+      // ax + by + cz = h for the plane of each polygon:
       int n = polygon.nrs.size();
+      qreal h0 = 1e30, a0, b0, c0, len0 = 0;
       for (int k = 0; k < n; k++) {
          int from = abs(polygon.nrs[k]),
             to = polygon.nrs[(k + 1) % n];
@@ -120,28 +123,32 @@ void HLines::calculate() {  // called in thread
             if (!clockwise)
                edges.insert(IntPair(from, to));
          }
+         if (k < 2)
+            continue;
+         // Now we compute a, b, c and h of the equation
+         // ax + by + cz = h for the plane of each polygon:
+         int iA = abs(polygon.nrs[k - 2]),
+            iB = abs(polygon.nrs[k - 1]),
+            iC = abs(polygon.nrs[k]);
+         Point3D A = eye[iA], B = eye[iB], C = eye[iC];
+         qreal u1 = B.x - A.x, u2 = B.y - A.y, u3 = B.z - A.z,
+            v1 = C.x - A.x, v2 = C.y - A.y, v3 = C.z - A.z,
+            a = u2 * v3 - u3 * v2, b = u3 * v1 - u1 * v3,
+            c = u1 * v2 - u2 * v1,
+            len = sqrt(a * a + b * b + c * c), h;
+         a /= len;
+         b /= len;
+         c /= len;
+         h = a * A.x + b * A.y + c * A.z;
+         if (len > len0 && h < 0) {
+            a0 = a; b0 = b; c0 = c; h0 = h, len0 = len;
+         }
       }
+      polygon.a = a0; polygon.b = b0; polygon.c = c0;
+      polygon.h = h0;
+      polyList[i] = polygon;
       if (clockwise) // Even if dashed lines are desired we are
          continue;   // now done with this polygon.
-
-      // Now we compute a, b, c and h of the equation
-      // ax + by + cz = h for the plane of each polygon:
-      int iA = abs(polygon.nrs[0]),
-         iB = abs(polygon.nrs[1]),
-         iC = abs(polygon.nrs[2]);
-      Point3D A = eye[iA], B = eye[iB], C = eye[iC];
-      qreal u1 = B.x - A.x, u2 = B.y - A.y, u3 = B.z - A.z,
-         v1 = C.x - A.x, v2 = C.y - A.y, v3 = C.z - A.z,
-         a = u2 * v3 - u3 * v2, b = u3 * v1 - u1 * v3,
-         c = u1 * v2 - u2 * v1,
-         len = sqrt(a * a + b * b + c * c), h;
-      a /= len;
-      b /= len;
-      c /= len;
-      h = a * A.x + b * A.y + c * A.z;
-      polygon.a = a; polygon.b = b; polygon.c = c;
-      polygon.h = h;
-      polyList[i] = polygon;
 
       // Triangulation:
       vector<Tria> triaExtra;
@@ -216,9 +223,9 @@ void HLines::calculate() {  // called in thread
             collectTrias(i, j);
       linesegment(from, to, 0);
    }
-   if (edges.size() > 0 && pOutSVG != nullptr) {
+   if (edges.size() > 0 && pOutSVG != 0) {
       *pOutSVG << "</svg>" << endl;
-      pOutSVG = nullptr;
+      pOutSVG = 0;
    }
 }
 
@@ -254,12 +261,10 @@ void HLines::exportSVG() {
       << "       xmlns:xlink=\"http://www.w3.org/1999/xlink\">"
       << endl;
    repaint();
-   if (fileNameSVG.length() > 0) {
-      QMessageBox msgBox(this);
-      msgBox.setText("SVG output in " + fileNameSVG);
-      msgBox.exec();
-   }
-   pOutSVG = nullptr;
+   if (fileNameSVG.length() > 0)
+      simpleMessage("SVG file written", "SVG output in " + 
+         fileNameSVG);
+   pOutSVG = 0;
 }
 
 void HLines::dashLinesToggle() {
@@ -288,7 +293,7 @@ void HLines::linesegment(int iP, int iQ, int iTrStart) {
       PQyMin = min(pScr.y, qScr.y),
       PQyMax = pScr.y + qScr.y - PQyMin,
       zP = P.z, zQ = Q.z, // P and Q give eye coordinates
-      PQzMin = min(zP, zQ);
+      PQzFar = min(zP, zQ);
    for (int iTr = iTrStart; iTr < relatedtrianrs.size(); iTr++) {
       int itria = relatedtrianrs[iTr];
       Tria t = tria[itria];
@@ -300,112 +305,88 @@ void HLines::linesegment(int iP, int iQ, int iTrStart) {
       qreal xA = aScr.x, yA = aScr.y, xB = bScr.x, yB = bScr.y,
          xC = cScr.x, yC = cScr.y;
 
-      // 1. Minimax test for x and y screen coordinates:
-      qreal ABCxMin = min(xA, min(xB, xC));
-      if (PQxMax <= ABCxMin && PQxMin < ABCxMin)
-         continue;
-      qreal ABCxMax = max(xA, max(xB, xC));
-      if (PQxMin >= ABCxMax && PQxMax > ABCxMax)
-         continue;
-      qreal ABCyMin = min(yA, min(yB, yC));
-      if (PQyMax <= ABCyMin && PQyMin < ABCyMin)
-         continue;
-      qreal ABCyMax = max(yA, max(yB, yC));
-      if (PQyMin >= ABCyMax && PQyMax > ABCyMax)
-         continue;
-      if (PQyMax <= ABCyMin || PQyMin >= ABCyMax)
-         continue;
-
-      // 2. Test if PQ is an edge of ABC:
-      if ((iP == iA || iP == iB || iP == iC) &&
-         (iQ == iA || iQ == iB || iQ == iC))
-         continue; // This triangle does not obscure PQ.
-
-      // 3. Test if PQ is clearly nearer than ABC:
-      qreal zA = A.z, zB = B.z, zC = C.z;
-      if (PQzMin >= zA && PQzMin >= zB && PQzMin >= zC)
-         continue; // This triangle does not obscure PQ.
-
-      // 4. Do P and Q (in 2D) lie in a half plane defined
-      // by line AB, on the side other than that of C?
-      // Similar for the edges BC and CA.
+      // Test 1 (2D). Are both P and Q on one side of the
+      // infinite line AB, and C on the other?
+      // Similar tests for the lines BC and CA.
       int ABP = Triangulate::orientation(scr, iA, iB, iP);
       if (ABP <= 0 && ABP +
          Triangulate::orientation(scr, iA, iB, iQ) < 0)
          continue; // Triangle does not obscure PQ.
-
       int BCP = Triangulate::orientation(scr, iB, iC, iP);
       if (BCP <= 0 && BCP +
          Triangulate::orientation(scr, iB, iC, iQ) < 0)
          continue; // Triangle does not obscure PQ.
-
       int CAP = Triangulate::orientation(scr, iC, iA, iP);
       if (CAP <= 0 && CAP +
          Triangulate::orientation(scr, iC, iA, iQ) < 0)
          continue; // Triangle does not obscure PQ.
 
-      // 5. Test (2D) if A, B and C lie on the same side
-      // of the infinite line through P and Q:
+      // Test 2 (2D). Are A, B and C lie on the same side
+      // of the infinite line through P and Q?
       if (abs(Triangulate::orientation(scr, iP, iQ, iA) +
          Triangulate::orientation(scr, iP, iQ, iB) +
          Triangulate::orientation(scr, iP, iQ, iC)) >= 2)
          continue;
 
-      // 6. Test if neither P nor Q lies behind the
-      // infinite plane through A, B and C:
+      // Test 3. Are P and Q nearer than the infinite plane
+      // through A, B and C, or do they lie in that plane?
       qreal a = polygon.a, b = polygon.b, c = polygon.c,
-         h = polygon.h, eps1 = 1e-5 * abs(h),
+         h = polygon.h,
          hP = a * P.x + b * P.y + c * P.z,
          hQ = a * Q.x + b * Q.y + c * Q.z;
-      if (hP > h - eps1 && hQ > h - eps1)
-         continue; // This triangle does not obscure PQ.
+      bool hPfar = nearer(h, hP), hQfar = nearer(h, hQ);
+      if (!hPfar && !hQfar)
+         continue;
 
-      // 7. Test if both P and Q behind triangle ABC
+      // Test 4. Check if both P and Q behind triangle ABC
       // and farther away (stronger negative)
       bool pInside =
          Triangulate::insideTriangle(scr, iA, iB, iC, iP);
       bool qInside =
          Triangulate::insideTriangle(scr, iA, iB, iC, iQ);
-      if (pInside && qInside && hP < h && hQ < h)
+      if (pInside && qInside && hPfar && hQfar)
          return; // This triangle obscures PQ.
 
-      // 8. Test if (in 3D) PQ intersects triangle ABC:
-      // Minimax test for efficiency, not essential:
-      if (min(P.x, Q.x) <= max(A.x, max(B.x, C.x)) &&
-         max(P.x, Q.x) >= min(A.x, min(B.x, C.x)) &&
-         (hP > h + eps1 && hQ < h - eps1 ||
-            hQ > h + eps1 && hP < h - eps1)) {
+      // Test 5. Does PQ penetrate triangle ABC?
+      if (hPfar != hQfar) {
          qreal xPQ = Q.x - P.x, yPQ = Q.y - P.y, zPQ = Q.z - P.z,
             lambda = (h - (P.x * a + P.y * b + P.z * c)) /
             (xPQ * a + yPQ * b + zPQ * c);
-         // PQ intersects plane ABC in point S:
-         qreal xS = P.x + lambda * xPQ,
-            yS = P.y + lambda * yPQ,
-            zS = P.z + lambda * zPQ;
-         qreal X = -xS / zS * d, Y = -yS / zS * d;
-         eye.push_back(Point3D(xS, yS, zS));
-         int n = scr.size();
-         scr.push_back(Point2D(X, Y));
-         bool done = false;
-         if (Triangulate::insideTriangle(scr, iA, iB, iC, n)) {
-            // Replace PQ with PS and QS:
-            linesegment(iP, n, iTr);
-            linesegment(iQ, n, iTr);
-            done = true; // Done with PQ
+         if (lambda > 0.001 && lambda < 0.999) {
+            // PQ intersects plane ABC in point S:
+            qreal xSeye = P.x + lambda * xPQ,
+               ySeye = P.y + lambda * yPQ,
+               zSeye = P.z + lambda * zPQ;
+            qreal xSscr = -xSeye / zSeye, ySscr = -ySeye / zSeye;
+            int n = scr.size();
+            scr.push_back(Point2D(xSscr, ySscr));
+            bool done = false;
+            if (lambda > 0.001 && lambda < 0.999 &&
+               Triangulate::insideTriangle(scr, iA, iB, iC, n)) {
+               eye.push_back(Point3D(xSeye, ySeye, zSeye));
+               // Replace PQ with PS and QS:
+               linesegment(iP, n, iTr);
+               linesegment(iQ, n, iTr);
+               eye.pop_back();
+               done = true; // Done with PQ
+            }
+            scr.pop_back();
+            if (done)
+               return;
          }
-         eye.pop_back();
-         scr.pop_back();
-         if (done)
-            return;
       }
-      // 9. Test if PQ is partly visible and partly invisible.
+
+      // Test 6. Is PQ is partly visible and partly invisible?
       // Compute the intersections I and J of PQ
       // with ABC in 2D.
       // If the corresponding points of intersection in 3D lie
       // in front of ABC, this triangle does not obscure PQ.
       // Otherwise, the intersections lie behind ABC and
       // this triangle obscures part of PQ:
-      qreal lambdaMin = 1.0, lambdaMax = 0.0, h1 = h + eps1;
+      if (nearer(hP, h) && pInside || nearer(hQ, h) && qInside)
+         continue;
+      qreal lambdaMin = 1.0, lambdaMax = 0.0;
+
       for (int ii = 0; ii < 3; ii++) {
          qreal v1 = bScr.x - aScr.x, v2 = bScr.y - aScr.y,
             w1 = aScr.x - pScr.x, w2 = aScr.y - pScr.y,
@@ -431,16 +412,15 @@ void HLines::linesegment(int iP, int iQ, int iTrStart) {
          Point2D temp = aScr;
          aScr = bScr; bScr = cScr; cScr = temp;
       }
-      qreal epsDist2 = 0.000001;
+      qreal epsDist2 = 1e-9;
       if (!pInside && lambdaMin > 0.001) {
          qreal iScrx = pScr.x + lambdaMin * u1,
             iScry = pScr.y + lambdaMin * u2;
          // Back to eye coordinates:
          qreal zI = 1 / (lambdaMin / zQ + (1 - lambdaMin) / zP),
             xI = -zI * iScrx, yI = -zI * iScry;
-         if (a * xI + b * yI + c * zI > h1) {
+         if (nearer(a * xI + b * yI + c * zI, h))
             continue; // This triangle does not obscure PQ.
-         }
          Point2D iScr(iScrx, iScry);
          if (distance2(iScr, pScr) > epsDist2) {
             int n = scr.size();
@@ -456,7 +436,7 @@ void HLines::linesegment(int iP, int iQ, int iTrStart) {
             jScry = pScr.y + lambdaMax * u2;
          qreal zJ = 1 / (lambdaMax / zQ + (1 - lambdaMax) / zP),
             xJ = -zJ * jScrx, yJ = -zJ * jScry;
-         if (a * xJ + b * yJ + c * zJ > h1)
+         if (nearer(a * xJ + b * yJ + c * zJ, h))
             continue; // This triangle does not obscure PQ.
          Point2D jScr(jScrx, jScry);
          if (distance2(jScr, qScr) > epsDist2) {
@@ -477,7 +457,7 @@ void HLines::linesegment(int iP, int iQ, int iTrStart) {
 void HLines::myDrawLine(QPainter &pnt, bool dashSVG,
    int x1, int y1, int x2, int y2)const {
    pnt.drawLine(x1, y1, x2, y2);
-   if (pOutSVG != nullptr) {
+   if (pOutSVG != 0) {
       *pOutSVG << "<line x1=\"" << x1 << "\" y1=\"" << y1
          << "\" x2=\"" << x2 << "\" y2=\"" << y2;
       if (dashSVG)
@@ -522,6 +502,9 @@ void HLines::paintEvent(QPaintEvent *event) {
    QPainter pnt(this);
    QPen solidPen(Qt::black, penWidth), dashPen;
    QVector<qreal> dashes;
+   QFont font;
+   font.setPixelSize(12);
+   pnt.setFont(font);
    dashes << 6 << 8;
    dashPen.setDashPattern(dashes);
    if (showNrs) {

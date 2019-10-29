@@ -10,7 +10,7 @@ Function::Function(QWidget *parent) {
    fileMenu->insertAction(openAct, newFunctionAct); // On top
    fileMenu->removeAction(openAct);
    fileMenu->removeAction(importAct);
-   showFunDataAct = new QAction("Show function data");
+   showFunDataAct = new QAction("Show function data", this);
    connect(showFunDataAct, &QAction::triggered, this,
       &Function::showFunctionData);
    viewMenu->addAction(showFunDataAct);
@@ -66,10 +66,7 @@ void Function::newFunction() {
 
    if (!parser.ok || xa + dx > xb || dx <= 0 ||
       ya + dy > yb || dy <= 0) {
-      QMessageBox msgBox;
-      msgBox.setWindowTitle("Syntax error");
-      msgBox.setText("Error in input data for x or y.");
-      msgBox.exec();
+      simpleMessage("Syntax error", "Error in input data for x or y.");
       return;
    }
    string buf = zText.toUtf8().constData();
@@ -80,11 +77,8 @@ void Function::newFunction() {
    selection.clear();
    parser.generate(this, xa, dx, xb, ya, dy, yb);
    if (!parser.ok || parser.pos != parser.buflen) {
-      QMessageBox msgBox;
-      msgBox.setWindowTitle("Syntax error");
-      msgBox.setText("f(x,y): error after position " +
+      simpleMessage("Syntax error", "f(x,y): error after position " +
          QString::number(parser.pos));
-      msgBox.exec();
       return;
    }
    boundsCenterDistance();

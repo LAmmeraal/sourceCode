@@ -34,12 +34,12 @@ protected:
    QAction *exportAct, *dashAct, *showNrsAct, *setPenWidthAct,
       *interruptAct;
    QString fileNameSVG;
-   QTextStream *pOutSVG = nullptr;
+   QTextStream *pOutSVG = 0;
    void myDrawLine(QPainter &pnt, bool dashSVG,
       int x1, int y1, int x2, int y2)const;
    int penWidth = 2; // can be overwritten
 public:
-   HLines(QWidget *parent = nullptr);
+   HLines(QWidget *parent = 0);
    vector<Tria> tria; // triangles of all polygons
    vector<int>relatedtrianrs;
    vector<int> polnrs; // polnrs[i] is the number of the
@@ -47,6 +47,9 @@ public:
    void linesegment(int iP, int iQ, int iTrStart);
    void collectTrias(int i, int j);
    void calculate();
+   inline bool nearer(qreal z1, qreal z2) { // Both negative
+      return z1 - z2 > eps1; // z1 nearer than z2 ?
+   }
    MyThread thread;
    QProgressBar progressBar;
    virtual void addToThreadStart();
